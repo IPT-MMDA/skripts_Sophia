@@ -1,0 +1,387 @@
+//////////////////////
+https://code.earthengine.google.com/eea4538ac6d3962b7ff4ee78fe01656e
+
+//////////////////////
+
+var table = ee.FeatureCollection("users/sofidrozd13/ALL_PERIODS_SHAPES"),
+    table2 = ee.FeatureCollection("users/sofidrozd13/regions_36"),
+    table3 = ee.FeatureCollection("users/sofidrozd13/regions_decentralization_36n"),
+    geometry = 
+    /* color: #d63000 */
+    /* shown: false */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[37.34749212157352, 49.24426099761068],
+          [37.34749212157352, 48.9709623692873],
+          [38.11653509032352, 48.9709623692873],
+          [38.11653509032352, 49.24426099761068]]], null, false),
+    table4 = ee.FeatureCollection("users/sofidrozd13/villages_conturs"),
+    geometry2 = 
+    /* color: #d63000 */
+    /* shown: false */
+    ee.Geometry.Polygon(
+        [[[36.064828546367245, 50.359182635518636],
+          [36.05641713889654, 50.35272079428813],
+          [36.06465688499029, 50.346915339507184],
+          [36.072553308330136, 50.35381608352037]]]),
+    geometry3 = 
+    /* color: #ff0000 */
+    /* shown: false */
+    ee.Geometry.LinearRing(
+        [[36.05676046165045, 50.35304938371092],
+         [36.064828546367245, 50.34669625184419],
+         [36.07169500144537, 50.353377970859604],
+         [36.064313562236386, 50.359073120113365],
+         [36.05676046165045, 50.35304938371092]]),
+    geometry4 = 
+    /* color: #00ff21 */
+    /* shown: false */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[35.99045842292179, 50.37697162440825],
+          [35.99045842292179, 50.316832193440334],
+          [36.18031590583195, 50.316832193440334],
+          [36.18031590583195, 50.37697162440825]]], null, false);
+          
+var oblast = table2.filter(ee.Filter.eq('TITLE','Kharkivska'))
+var kappa = []
+
+var oblast_otg = table3.filter(ee.Filter.bounds(oblast))
+//var oblast_otg_id = oblast_otg.aggregate_array('OBJECTID').int()
+//print('otgs_id',oblast_otg_id.lenght)
+
+var villages = table4//.filter(ee.Filter.inList('fid',villages_fid.slice(k*10,(k+1)*10)))
+var composites = require('users/sofidrozd13/test:7777');
+var period_pre_war = 16
+var period_post_war = 16
+var test_period = 22
+var villages_fid_size=[]
+var oblast_otg_id = [110,111,112,113,114,115,116]
+var rez_img = []
+
+//for(var id = 0; id<oblast_otg_id.length; id++){
+for (var gromada = 0; gromada < 1; gromada++){
+      print("otg: ", oblast_otg_id[gromada])
+    
+    var otg = oblast_otg.filter(ee.Filter.eq('OBJECTID',oblast_otg_id[gromada]))//.filter(ee.Filter.bounds(geometry))
+    var villages_fid =table4.filter(ee.Filter.bounds(otg)).aggregate_array('fid').sort()
+    print('villages_fid',villages_fid)
+    villages_fid_size.push(ee.Array(villages_fid).length)
+    
+    var train_data = table.distinct('.geo').filter(ee.Filter.lte('Period', period_post_war.toString())).filter(ee.Filter.gt('Period', (period_post_war-4).toString())).distinct('.geo').filter(ee.Filter.bounds(otg))
+    var returned_fields = []
+    
+    //print(villages_fid.get(0)==2949)
+    
+    for (var k = 0; k<2;k++){
+    
+    
+    var returned = composites.test(otg,oblast,period_pre_war,period_post_war,test_period,k)
+    //print('returned: ',returned[0].size())
+    
+    returned_fields.push(returned[0])
+    kappa.push(returned[7])
+    
+    
+      if (k==1){
+        var NDVI = returned[1]
+        var GCI = returned[2]
+        var post_war = returned[3]
+        var pre_war = returned[6]
+       // var train_ok_data_post_war = returned[7]
+    
+      }
+    }
+    
+    var fields = returned_fields[0]
+    for(var i = 1; i<2; i++){
+      print(returned_fields[i].size(), returned_fields[i].size()>0)
+      if(returned_fields[i]){
+              print("no nan")
+
+      fields = fields.merge(returned_fields[i])
+      }
+      
+    }
+    //print("all",fields.size())
+    var damaged_fields = fields.filter('predicted ==1')
+    var ok_fields = fields.filter('predicted ==0')
+    print("damaged: ", damaged_fields.size(), "ok: ", ok_fields.size())
+    
+    
+    var visualization = {
+      min: 0.0,
+      max: 0.2,
+      bands: ['B4', 'B3', 'B2'],
+    };
+    
+    //Map.addLayer(pre_war[0].max(), visualization, 'pre war 19 RGB');
+    //Map.addLayer(pre_war[1].max(), visualization, 'pre war 20 RGB');
+    //Map.addLayer(pre_war[2].max(), visualization, 'pre war 21 RGB');
+    Map.addLayer(post_war.max(), visualization, 'post war RGB');
+    
+    
+    //Map.addLayer(train_data,null,"train damaged",0)
+    //Map.addLayer(villages,null,"villages",0)
+ 
+ 
+ var fcVis = damaged_fields.style({
+  color: 'yellow',
+  width: 3,
+  fillColor: '00000000',  // with alpha set for partial transparency
+ // lineType: 'dotted',
+  pointSize: 10,
+  pointShape: 'circle'
+ // fillColor_opacity: 1,
+});
+Map.addLayer(fcVis, null, 'Collection-wide style',0);
+ 
+ 
+    Map.addLayer(oblast.style({
+  color: 'yellow',
+  width: 3,
+  fillColor: '00000000',  // with alpha set for partial transparency
+ // lineType: 'dotted',
+  pointSize: 10,
+  pointShape: 'circle'
+ // fillColor_opacity: 1,
+}))
+
+    Map.addLayer(otg.style({
+  color: 'red',
+  width: 3,
+  fillColor: 'fff80088',  // with alpha set for partial transparency
+ // lineType: 'dotted',
+  pointSize: 10,
+  pointShape: 'circle'
+ // fillColor_opacity: 1,
+}))
+
+
+    Map.addLayer(damaged_fields,null,"damaged_fields",0)
+    
+    Map.addLayer(ok_fields,null,"ok_fields",0)
+ 
+ 
+ 
+    
+    //////////////detect damaged pixels////////////////////////////  
+    
+    function compute_porig(feature) { 
+    
+    for (var i=2; i<4; i++) 
+      {
+        var d = ee.Number(feature.get('B'+i+'_mean')); 
+        var h = ee.Number(feature.get('B'+i+'_stdDev')); 
+        var z = ee.Number(1) 
+        feature = feature.set('B'+i+'_porig', h )
+      }
+      return feature; 
+    }
+    
+    damaged_fields = damaged_fields.filter(ee.Filter.notNull(['NDVI_mean'])).map(compute_porig);
+    
+    var d = [];
+    for (var i=2; i<4; i++)
+    {
+      
+       d.push(damaged_fields
+      .filter(ee.Filter.notNull(['B'+i+'_porig']))
+      .reduceToImage({
+        properties: ['B'+i+'_porig'],
+        reducer: ee.Reducer.first()
+    }
+    ));
+    }
+    
+    var gci_mean = damaged_fields
+      .filter(ee.Filter.notNull(['NDVI_mean']))
+      .reduceToImage({
+        properties: ['GCI_mean'],
+        reducer: ee.Reducer.first()
+    });
+    
+    
+    var ndvi_mean = damaged_fields
+      .filter(ee.Filter.notNull(['NDVI_mean']))
+      .reduceToImage({
+        properties: ['NDVI_mean'],
+        reducer: ee.Reducer.first()
+    });
+    
+    var bands_rasters = [];
+    
+    for (var i=2; i<4; i++){ 
+    
+    bands_rasters.push(damaged_fields
+      .filter(ee.Filter.notNull(['B'+i+'_mean']))
+      .reduceToImage({
+        properties: ['B'+i+'_mean'],
+        reducer: ee.Reducer.first()
+    }));
+    }
+    
+    //diff
+    var bands_diff = [];
+    
+    var diff_ndvi = ndvi_mean.subtract(NDVI).divide(ndvi_mean)
+    diff_ndvi = diff_ndvi.updateMask(diff_ndvi.gte(0.2));
+    
+    var diff_gci = gci_mean.subtract(GCI).divide(gci_mean)
+    diff_gci = diff_gci.updateMask(diff_gci.lte(-0.1));
+    
+    var b2_mean = bands_rasters[0]
+    var b3_mean = bands_rasters[1]
+    
+    var diff_b2 = b2_mean.subtract(returned[4])//.divide(b2_mean)
+    diff_b2 = diff_b2.updateMask(diff_b2.lte(d[0].multiply(-1.7)))
+    
+    var diff_b3 =  b3_mean.subtract(returned[5])//.divide(b3_mean)                               ////
+    diff_b3 = diff_b3.updateMask(diff_b3.gte(d[1].multiply(1.5)))
+    
+    var diff_b3_brown = diff_b3.updateMask(diff_b3.gte(d[1].multiply(1.2))).updateMask(ndvi_mean.lte(0.4));////
+    
+    var combine = ee.ImageCollection([diff_b3, diff_b2]).mosaic();
+    
+    
+    
+    
+    var damage_fields_nd = NDVI.reduceRegions({
+      collection: table,
+      reducer: ee.Reducer.mean(),
+      scale: 10,
+    });
+    
+    var damage_fields_gci = GCI.reduceRegions({
+      collection: table,
+      reducer: ee.Reducer.mean(),
+      scale: 10,
+    });
+    ///////////////////////BC//////////////////////////
+    
+    
+    var ndvi_filter = NDVI.reduceNeighborhood(ee.Reducer.mean(), ee.Kernel.rectangle(5,5))
+    var gci_filter = GCI.reduceNeighborhood(ee.Reducer.mean(), ee.Kernel.rectangle(5,5))
+    
+    var ndvi_diff = ndvi_filter.subtract(NDVI)
+    var gci_diff = gci_filter.subtract(GCI)
+    
+    var reducers = ee.Reducer.mean().combine({
+      reducer2: ee.Reducer.stdDev(),
+      sharedInputs: true
+    });
+    damage_fields_nd = ndvi_diff.reduceRegions({
+      collection: damaged_fields,
+      reducer: reducers,
+      scale: 10,
+    })
+    
+    damage_fields_gci = gci_diff.reduceRegions({
+      collection: damaged_fields,
+      reducer: reducers,
+      scale: 10,
+    })
+    
+    function compute_index_diff(feature) { 
+      var d = ee.Number(feature.get('mean')); 
+      var h = ee.Number(feature.get('stdDev')); 
+      var z = ee.Number(1.5) 
+      return feature.set({porig_nd: d.add(z.multiply(h)) }); 
+    } 
+    
+    var damage_fields_nd = damage_fields_nd.filter(ee.Filter.notNull(['mean'])).map(compute_index_diff); 
+    var damage_fields_gci = damage_fields_gci.filter(ee.Filter.notNull(['mean'])).map(compute_index_diff); 
+    
+    var damage_fields_green_porig_nd = damage_fields_nd 
+      .filter(ee.Filter.notNull(['porig_nd'])) 
+      .reduceToImage({ 
+        properties: ['porig_nd'], 
+        reducer: ee.Reducer.first() 
+    }).rename('porig_nd').toFloat(); 
+     
+     var damage_fields_green_porig_gci = damage_fields_gci 
+      .filter(ee.Filter.notNull(['porig_nd'])) 
+      .reduceToImage({ 
+        properties: ['porig_nd'], 
+        reducer: ee.Reducer.first() 
+    }).rename('porig_nd').toFloat(); 
+    
+    
+    
+    var ndvi_diff_count = ndvi_diff.clip(damage_fields_nd).addBands(damage_fields_green_porig_nd)
+    //print(ndvi_diff_count)
+    
+    var gci_diff_count = gci_diff.clip(damage_fields_gci).addBands(damage_fields_green_porig_gci)
+    //print(gci_diff_count)
+    
+    var damage_ndvi_diff = ndvi_diff_count.expression(
+          "b('NDVI_mean') - b('porig_nd') >=0 ? 1" +
+          ": 0"
+        ).rename('porig_nd').toFloat();
+        
+    var damage_gci_diff = gci_diff_count.expression(
+          "b('GCI_mean') - b('porig_nd') >=0 ? 1" +
+          ": 0"
+        ).rename('porig_nd').toFloat();
+        
+    var damage_gci_diff1 = gci_diff_count.expression(
+          "b('GCI_mean') + b('porig_nd') <=0.5 ? 1" +
+          ": 0"
+        ).rename('porig_nd').toFloat();
+    
+    //var combine1 = ee.ImageCollection([damage_gci_diff1, damage_gci_diff]).mosaic();
+    
+    var imageVisParam2 = {"min":-1,"max":1,"palette":["ff0000"]}
+    
+    damage_ndvi_diff = damage_ndvi_diff.updateMask(damage_ndvi_diff.neq(0));  
+    
+    damage_gci_diff1 = damage_gci_diff.updateMask(damage_gci_diff1.neq(0));  
+    damage_gci_diff = damage_gci_diff.updateMask(damage_gci_diff.neq(0));
+    
+    //Map.addLayer(damage_gci_diff, imageVisParam2,'Damage_diff_gci', 0)
+    //Map.addLayer(damage_ndvi_diff, imageVisParam2,'Damage_diff_bd', 0)
+    //Map.addLayer(damage_gci_diff1, imageVisParam2,'Damage_diff_gci1', 0)  
+    //Map.addLayer(diff_gci, imageVisParam2,'diff_gci', 0)  
+    //Map.addLayer(gci_mean, imageVisParam2,'mean gci', 0)  
+    //Map.addLayer(GCI, imageVisParam2,'gci', 0)  
+     
+    diff_b3_brown = diff_b3_brown.multiply(diff_gci)
+    var diff_b2_brown = diff_b2.updateMask(ndvi_mean.lte(0.4))
+    var combine1 = ee.ImageCollection([damage_gci_diff,damage_gci_diff1,diff_b2_brown.rename('porig_nd'),damage_ndvi_diff,diff_b3_brown.rename('porig_nd').toFloat()]).mosaic();
+    //print(damage_ndvi_diff,damage_gci_diff, combine1)
+    
+    //Map.addLayer(combine1, imageVisParam2,'combine1', 0)  
+    
+    var res = combine1.multiply(combine)
+    
+    //Map.addLayer(res, imageVisParam2,'damaged pixels', 0)  
+    rez_img.push(res)
+    }
+
+var all_ter = ee.ImageCollection(rez_img).mosaic();
+
+Map.addLayer(all_ter, imageVisParam2,'all damaged pixels', 0)  
+
+Export.image.toDrive({
+    image: all_ter, //тут напиши назву карти яку хочеш скачати як в Layers
+    description: 'Kharkivska_110', 
+    folder: 'damaged', 
+    fileNamePrefix: 'Kharkivska_110_period_'+period_pre_war, 
+    fileFormat: 'tif',
+    region: otg,
+    maxPixels: 1000000000
+
+})
+
+
+
+
+
