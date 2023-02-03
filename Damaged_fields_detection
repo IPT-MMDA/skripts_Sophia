@@ -1,0 +1,563 @@
+/////////////////////////////////////////
+https://code.earthengine.google.com/573d5a1c534545aff27e75ae2f696398?noload=1
+/////////////////////////////////////////
+
+var table = ee.FeatureCollection("users/sofidrozd13/ALL_PERIODS_SHAPES"),
+    table2 = ee.FeatureCollection("users/sofidrozd13/regions_36"),
+    geometry = /* color: #d63000 */ee.Geometry.MultiPoint(
+        [[37.34821631632092, 47.607533622275504],
+         [35.841033916217306, 47.525366197235044],
+         [35.99826175459086, 47.50792850667963],
+         [36.3110438207473, 47.46336110565379],
+         [37.438587523852945, 47.54794613829022],
+         [35.62766429143744, 47.546712893334934]]),
+    table3 = ee.FeatureCollection("users/sofidrozd13/buffered");
+    
+var time = ['2022-02-24','2022-03-14','2022-03-28','2022-04-11','2022-04-25','2022-05-09','2022-05-23','2022-06-06','2022-06-20','2022-07-04','2022-07-18', '2022-08-01','2022-08-15','2022-08-29','2022-09-12','2022-09-26','2022-10-10','2022-10-24','2022-11-07','2022-11-21','2022-12-05','2022-12-19']
+var dam_data = [] 
+var research_area = table2.filter(ee.Filter.eq('TITLE','Mykolaivska'))
+var class_mask = ee.Image("users/sofidrozd13/Classification_2022_July");
+var data = ee.FeatureCollection("users/hannayailymova16/utm-merged-results-w-attr-filtered_2022-06_shape")
+var periods = ['1','2','3','4','5','6','7','8','9','10','11','12','13','14','15','16','17','18','19','20','21','22']
+Map.addLayer(research_area,null,'research_area',0)  
+
+//print(table3)
+
+//var test = ee.List(table.filter(ee.Filter.bounds(research_area)).aggregate_array('Period'))
+//print("Periods",test.distinct())
+//print(test.distinct()[0]==2,test.distinct().getInfo()[0]==2)
+//var table = ee.FeatureCollection("users/hannayailymova16/ALL_PERIODS_damages_2022");
+
+function compute_bufer(feature) { 
+      return feature.buffer(-30); 
+    } 
+    
+//var damage_data  = table3//table.map(compute_bufer);
+
+
+for(var period = 6; period<12; period++){
+var start = time[period]
+var end = time[period+1]
+
+var research_area = table2.filter(ee.Filter.eq('TITLE','Mykolaivska'))
+print(start,end,"Period: ",period)
+
+//Map.addLayer(research_area)
+
+//print(ee.String(periods[period]))
+
+
+
+//var damage_data = table.filter(ee.Filter.lte('Period',periods[period])).filter(ee.Filter.bounds(research_area)).filter(ee.Filter.gt('Period', (periods[period-4]).toString()))
+//var test = damage_data.aggregate_array('Period')
+//print("Period",periods[period-4],periods[period])
+table3 = table3.select(['Period','area','date','system:index'])
+var damage_data = table3.filter(ee.Filter.bounds(research_area))
+damage_data = damage_data.filter(ee.Filter.eq('Period',periods[period]))//.filter(ee.Filter.rangeContains("Period", periods[period-4],periods[period]))
+
+
+//print("Periods 2", damage_data.aggregate_array('Period').distinct())
+
+/*if(period>=4){
+  print(period)
+
+damage_data = damage_data.filter(ee.Filter.gt('Period', (periods[period-4]).toString()))
+}
+*/
+
+//print("size: ",damage_data.size().getInfo())
+print("size: ",damage_data.size())  
+print(damage_data)
+
+if(damage_data.size().getInfo()>0){
+
+Map.addLayer(damage_data,null, 'damage_data_'+period,0 )
+
+research_area = damage_data.geometry()
+
+
+function maskS2clouds2(image) {
+  var qa = image.select('SCL');
+  var mask = qa.eq(1).or(qa.eq(2)).or(qa.eq(4)).or(qa.eq(5)).or(qa.eq(6)).or(qa.eq(7))
+  return image.updateMask(mask).divide(10000);
+}
+
+
+var crop_mask = class_mask.expression( 
+    " (b('b1')>1 && b('b1')<10|| b('b1')==15 || b('b1')==19) ? 1" +
+      ": 0"
+    ).clip(research_area).rename('mask'); 
+   
+
+function maskS2clouds3(image) {
+  var qa = crop_mask.select('mask');
+  var mask = qa.eq(1)
+  return image.updateMask(mask);
+}
+
+var post_war = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+          .filterBounds(research_area)
+          .filterDate(start, end)
+          .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE',20))
+          .map(maskS2clouds2)
+          .map(maskS2clouds3).sort('CLOUD_COVER')//.limit(4)
+          
+var visualization = {
+  min: 0.0,
+  max: 0.2,
+  bands: ['B4', 'B3', 'B2'],
+};
+
+Map.addLayer(post_war.median(), visualization, 'pre RGB',0);
+print(post_war.size())
+
+if(post_war.size().getInfo()>0){
+  
+//  print("here")
+
+///////////////////////features////////////////////////
+var imageVisParam2 = {"min":-1,"max":1,"palette":["ff0000"]}
+
+var pre = post_war.median()
+//NDVI
+
+var NDVI = (post_war.map(function(image) {
+    return image.normalizedDifference(['B8', 'B4']);
+})).max().rename('NDVI');
+
+//EVI
+var EVI = pre.expression(
+                      '2.5*((B8-B4)/(B8+6*B4-7.5*B2+1))', {
+                        'B8' : pre.select('B8'),
+                        'B4' : pre.select('B4'),
+                        'B2' : pre.select('B2')
+                      })
+                      .rename('EVI');
+//AVI
+var AVI= pre.expression(
+                      '((B8 * (1-B4)*(B8-B4))**(1/3))', {
+                        'B8' : pre.select('B8'),
+                        'B4' : pre.select('B4')
+                        
+                      })
+                      .rename('AVI');
+
+
+//GCI
+var GCI= pre.expression(
+                      '((B9 / B3) -1)', {
+                        'B9' : pre.select('B9'),
+                        'B3' : pre.select('B3')
+                        
+                      })
+                      .rename('GCI');
+
+
+var NDVIpalette = ['FFFFFF', 'CE7E45', 'DF923D', 'F1B555', 'FCD163', '99B718', '74A901', '66A000', '529400', '3E8601', '207401', '056201', '004C00', '023B01', '012E01', '011D01', '011301'];
+
+//  bands
+var B2 = pre.select('B2')
+var B3 = pre.select('B3')
+var B4 = pre.select('B4')
+var B5 = pre.select('B5')
+var B6 = pre.select('B6')
+var B7 = pre.select('B7')
+var B8= pre.select('B8')
+
+var features = ['NDVI','GCI','B2','B3','EVI','AVI',"B8"]  
+//var input = []
+
+
+////////////////////zonal statistik/////////////////////
+
+for(var i = 0; i<7; i++){
+
+    damage_data = eval(features[i]).reduceRegions({
+    collection: damage_data,
+    reducer: ee.Reducer.mean().setOutputs([features[i]+"_mean"]).combine({
+    reducer2: ee.Reducer.stdDev().setOutputs([features[i]+"_stdDev"]),
+    sharedInputs: true}),
+  //  tileScale: 2,
+    scale: 10})
+  
+}
+//print(damage_data)
+  function compute_porig(feature) { 
+    
+    for (var i=2; i<4; i++) 
+      {
+        var d = ee.Number(feature.get('B'+i+'_mean')); 
+        var h = ee.Number(feature.get('B'+i+'_stdDev')); 
+        var z = ee.Number(1) 
+        feature = feature.set('B'+i+'_porig', h )
+      }
+      return feature; 
+    }
+    
+var damaged_fields = damage_data.filter(ee.Filter.notNull(['NDVI_mean'])).map(compute_porig);
+
+//print(damaged_fields)
+///////////////////////rasters///////////////////////
+var d = [];
+
+    for (var i=2; i<4; i++){
+    //  print(i)
+       d.push(damaged_fields
+      .filter(ee.Filter.notNull(['B'+i+'_porig']))
+        .reduceToImage({
+          properties: ['B'+i+'_porig'],
+          reducer: ee.Reducer.first() 
+        })
+      );
+    }
+//Map.addLayer(d[0], imageVisParam2, 'b2 porig',0);
+   
+var gci_mean = damaged_fields
+      .filter(ee.Filter.notNull(['NDVI_mean']))
+      .reduceToImage({
+        properties: ['GCI_mean'],
+        reducer: ee.Reducer.first()
+    });
+    
+    
+var ndvi_mean = damaged_fields
+      .filter(ee.Filter.notNull(['NDVI_mean']))
+      .reduceToImage({
+        properties: ['NDVI_mean'],
+        reducer: ee.Reducer.first()
+    });
+    
+var bands_rasters = [];
+    
+    for (var i=2; i<4; i++){ 
+    bands_rasters.push(damaged_fields
+      .filter(ee.Filter.notNull(['B'+i+'_mean']))
+      .reduceToImage({
+        properties: ['B'+i+'_mean'],
+        reducer: ee.Reducer.first()
+    }));
+    }   
+    
+ //diff
+ //var bands_diff = [];
+    
+//  var diff_ndvi = ndvi_mean.subtract(NDVI).divide(ndvi_mean)
+//  diff_ndvi = diff_ndvi.updateMask(diff_ndvi.gte(0.2));
+    
+//  var diff_gci = gci_mean.subtract(GCI).divide(gci_mean)
+//  diff_gci = diff_gci.updateMask(diff_gci.lte(-0.01));
+    
+  var b2_mean = bands_rasters[0]
+  var b3_mean = bands_rasters[1]
+    
+  var diff_b2 = b2_mean.subtract(B2)//.divide(b2_mean)
+  var diff_b2_1 = diff_b2.updateMask(diff_b2.lte(d[0].multiply(-0.7)))
+    
+  var diff_b3=  b3_mean.subtract(B3)//.divide(b3_mean)    
+  var diff_b3_brown = diff_b3.updateMask(diff_b3.gte(d[1].multiply(0.2))).updateMask(ndvi_mean.lt(0.4));////
+////
+  var diff_b3_green = diff_b3.updateMask(diff_b3.gte(d[1].multiply(0.5))).updateMask(ndvi_mean.gte(0.4));
+  var diff_b3_1 = diff_b3.updateMask(diff_b3.gte(d[1].multiply(0.4)))
+
+    
+//  var combine = ee.ImageCollection([diff_b3_green, diff_b3_brown, diff_b2]).mosaic();
+
+//Map.addLayer(diff_b2,imageVisParam2,'diff_b2',false)
+//Map.addLayer(diff_b3_green, imageVisParam2,'diff_b3_green',false)
+//Map.addLayer(diff_b3_brown, imageVisParam2,'diff_b3_brown',false)
+
+//Map.addLayer(diff_ndvi, imageVisParam2,'diff_ndvi',false)
+//Map.addLayer(diff_gci, imageVisParam2,'diff_gci',false)
+
+    ///////////////////////BC//////////////////////////
+var ndviParams = {min: -1, max: 1, palette: ['blue', 'white', 'green']};    
+//Map.addLayer(NDVI, ndviParams,'NDVI',false)
+    
+var ndvi_filter =NDVI.reduceNeighborhood(ee.Reducer.mean(), ee.Kernel.rectangle(5,5)).rename("ndvi_filtered")
+var gci_filter = GCI.reduceNeighborhood(ee.Reducer.mean(), ee.Kernel.rectangle(5,5))
+
+//Map.addLayer(NDVI, NDVIpalette,'NDVI',false)
+
+
+//print("ndvi_filter",ndvi_filter)
+//Map.addLayer(ndvi_filter, ndviParams,'ndvi_filter',false)
+
+    
+//var b2_filter = B2.reduceNeighborhood(ee.Reducer.mean(), ee.Kernel.rectangle(5,5))
+var b3_filter = B3.reduceNeighborhood(ee.Reducer.mean(), ee.Kernel.rectangle(5,5))
+
+var ndvi_diff = ndvi_filter.subtract(NDVI).rename("ndvi_diff")
+var gci_diff = gci_filter.subtract(GCI)
+
+//print("ndvi_diff",ndvi_diff)
+//Map.addLayer(ndvi_diff, null,'ndvi_diff',false)
+
+
+//var b2_diff = b2_filter.subtract(B2)
+var b3_diff = b3_filter.subtract(B3)
+
+var reducers = ee.Reducer.mean().setOutputs(["diff_mean"]).combine({
+      reducer2: ee.Reducer.stdDev().setOutputs(["diff_stdDev"]),
+      sharedInputs: true
+    });
+    
+var damage_fields_nd = ndvi_diff.reduceRegions({
+      collection: damaged_fields,
+      reducer: reducers,
+      scale: 10,
+     // tileScale: 2
+    })
+    
+var  damage_fields_gci = gci_diff.reduceRegions({
+      collection: damaged_fields,
+      reducer: reducers,
+      scale: 10,
+    //  tileScale: 2
+    })
+ /*   
+var  damage_fields_b2 = b2_diff.reduceRegions({
+      collection: damaged_fields,
+      reducer: reducers,
+      scale: 10,
+    //  tileScale: 2
+    })
+   */  
+var  damage_fields_b3 = b3_diff.reduceRegions({
+      collection: damaged_fields,
+      reducer: reducers,
+      scale: 10,
+    //  tileScale: 2
+    })
+   
+function compute_index_diff(feature) { 
+      var d = ee.Number(feature.get('diff_mean')); 
+      var h = ee.Number(feature.get('diff_stdDev')); 
+      var z = ee.Number(1) 
+      return feature.set({porig_nd: d.add(z.multiply(h)) }); 
+    } 
+    
+damage_fields_nd = damage_fields_nd.filter(ee.Filter.notNull(['diff_mean'])).map(compute_index_diff); 
+damage_fields_gci = damage_fields_gci.filter(ee.Filter.notNull(['diff_mean'])).map(compute_index_diff); 
+    
+//damage_fields_b2 = damage_fields_b2.filter(ee.Filter.notNull(['diff_mean'])).map(compute_index_diff); 
+damage_fields_b3 = damage_fields_b3.filter(ee.Filter.notNull(['diff_mean'])).map(compute_index_diff); 
+
+
+//Map.addLayer(damage_fields_nd, imageVisParam2,'damage_fields_nd',false)
+    
+
+var damage_fields_green_porig_nd = damage_fields_nd 
+      .filter(ee.Filter.notNull(['porig_nd'])) 
+      .reduceToImage({ 
+        properties: ['porig_nd'], 
+        reducer: ee.Reducer.first() 
+    }).rename('porig_nd').toFloat(); 
+     
+var damage_fields_green_porig_gci = damage_fields_gci 
+      .filter(ee.Filter.notNull(['porig_nd'])) 
+      .reduceToImage({ 
+        properties: ['porig_nd'], 
+        reducer: ee.Reducer.first() 
+    }).rename('porig_nd').toFloat(); 
+/*    
+var damage_fields_green_porig_b2 = damage_fields_b2 
+      .filter(ee.Filter.notNull(['porig_nd'])) 
+      .reduceToImage({ 
+        properties: ['porig_nd'], 
+        reducer: ee.Reducer.first() 
+    }).rename('porig_nd').toFloat(); 
+ */    
+var damage_fields_green_porig_b3 = damage_fields_b3 
+      .filter(ee.Filter.notNull(['porig_nd'])) 
+      .reduceToImage({ 
+        properties: ['porig_nd'], 
+        reducer: ee.Reducer.first() 
+    }).rename('porig_nd').toFloat(); 
+   
+var ndvi_diff_count = ndvi_diff.clip(damage_fields_nd).addBands(damage_fields_green_porig_nd)
+var gci_diff_count = gci_diff.clip(damage_fields_gci).addBands(damage_fields_green_porig_gci)
+
+//var b2_diff_count = b2_diff.clip(damage_fields_b2).addBands(damage_fields_green_porig_b2)
+var b3_diff_count = b3_diff.clip(damage_fields_b3).addBands(damage_fields_green_porig_b3)
+
+//Map.addLayer(ndvi_diff_count, null,'ndvi_diff_count',false)
+
+
+//print(ndvi_diff_count)
+
+
+var damage_ndvi_diff = ndvi_diff_count.expression(
+          "b('ndvi_diff') - 0.5*b('porig_nd') >=0 ? 1" +
+          ": 0"
+        ).rename('porig_nd').toFloat();
+        
+var damage_gci_diff = gci_diff_count.expression(
+          "b('GCI_mean') - b('porig_nd') >=0 ? 1" +
+          ": 0"
+        ).rename('porig_nd').toFloat();
+        
+var damage_gci_diff1 = gci_diff_count.expression(
+          "b('GCI_mean') + 0.7 * b('porig_nd') <=0 ? 1" +
+          ": 0"
+        ).rename('porig_nd').toFloat();
+
+//print(b2_diff_count)
+/*
+var damage_b2_diff = b2_diff_count.expression(
+          "b('B2_mean') - b('porig_nd') >=0 ? 1" +
+          ": 0"
+        ).rename('porig_nd').toFloat();
+   */       
+var damage_b3_diff = b3_diff_count.expression(
+          "b('B3_mean') - 0.7*b('porig_nd') >=0 ? 1" +
+          ": 0"
+        ).rename('porig_nd').toFloat();
+
+  
+damage_ndvi_diff = damage_ndvi_diff.updateMask(damage_ndvi_diff.neq(0));  
+damage_gci_diff1 = damage_gci_diff1.updateMask(damage_gci_diff1.neq(0));  
+damage_gci_diff = damage_gci_diff.updateMask(damage_gci_diff.neq(0));
+
+//damage_b2_diff = damage_b2_diff.updateMask(damage_b2_diff.neq(0));
+damage_b3_diff = damage_b3_diff.updateMask(damage_b3_diff.neq(0));
+//var comb_damage_b3_diff = damage_b3_diff.multiply(diff_b3_green)
+var traces = damage_ndvi_diff.multiply(damage_gci_diff).updateMask(ndvi_mean.gte(0.65));  
+var black = damage_ndvi_diff.multiply(damage_gci_diff1).multiply(diff_b3_1)
+var black_points = damage_gci_diff1.multiply(damage_b3_diff).updateMask(ndvi_mean.lte(0.7));  
+
+var white = diff_b2_1.multiply(damage_gci_diff)
+
+
+//////////////
+var  white_mean = white.reduceRegions({
+      collection: damaged_fields,
+      reducer: ee.Reducer.count(),
+      scale: 10,
+    //  tileScale: 2
+    })
+    
+//print("white_mean",white_mean)
+
+function compute_persent(feature) { 
+      var d = ee.Number(feature.get('count')); 
+      var h = ee.Number(feature.get('area')); 
+      var z = ee.Number(100) 
+      return feature.set({percent: d.multiply(z).divide(h).multiply(100).divide(10000)}); 
+    }     
+white_mean = white_mean.filter(ee.Filter.notNull(['count'])).map(compute_persent); 
+
+var white_mean_img = white_mean 
+      .reduceToImage({ 
+        properties: ['percent'], 
+        reducer: ee.Reducer.first() 
+    }).rename('percent').toFloat(); 
+    
+//print("white_mean",white_mean)
+//Map.addLayer(white_mean_img,0)    
+/////////////
+black_points = damage_gci_diff1.multiply(damage_b3_diff).updateMask(white_mean_img.lte(4.48))
+
+var result =  ee.ImageCollection([white.rename('porig_nd'), black.rename('porig_nd'),black_points.rename('porig_nd'),traces.rename('porig_nd')]).mosaic();
+
+//Map.addLayer(traces, imageVisParam2,'ndvi_gci_diff_traces',false)
+//Map.addLayer(black, imageVisParam2,'black',false)
+//Map.addLayer(black_points, imageVisParam2,'black_points',false)
+
+//Map.addLayer(white, imageVisParam2,'white',false)
+//Map.addLayer(diff_b2_1, imageVisParam2,'diff_b2_1',false)
+//Map.addLayer(diff_b3_1, imageVisParam2,'diff_b3_1',false)
+
+Map.addLayer(result, imageVisParam2,'result',false)
+
+
+  //  Map.addLayer(damage_gci_diff, imageVisParam2,'Damage_diff_gci (traces)', 0)
+  // Map.addLayer(damage_ndvi_diff, imageVisParam2,'Damage_diff_ndvi', 0)
+ //   Map.addLayer(damage_gci_diff1, imageVisParam2,'Damage_diff_gci1', 0)  
+ //   Map.addLayer(comb_damage_b3_diff, imageVisParam2,'comb_damage_b3_diff', 0)  
+ //   Map.addLayer(damage_b3_diff, imageVisParam2,'damage_b3_diff', 0)  
+  //  Map.addLayer(damage_b2_diff, imageVisParam2,'damage_b2_diff', 0)  
+    
+//diff_b3_brown = diff_b3_brown.multiply(diff_gci)
+//var diff_b2_brown = diff_b2.updateMask(ndvi_mean.lte(0.4))
+//var combine1 = ee.ImageCollection([damage_gci_diff,damage_gci_diff1, diff_b2_brown.rename('porig_nd'),damage_ndvi_diff,diff_b3_brown.rename('porig_nd').toFloat()]).mosaic();
+    //print(damage_ndvi_diff,damage_gci_diff, combine1)
+    
+//Map.addLayer(combine, imageVisParam2,'combine', 0)  
+//Map.addLayer(combine1, imageVisParam2,'combine1', 0)  
+//Map.addLayer(diff_b2_brown, imageVisParam2,'diff_b2_brown', 0)  
+ 
+    
+//var res = combine1.multiply(combine)
+//res = res.updateMask(res.neq(0))
+//print(res)
+//Map.addLayer(res,imageVisParam2,'res',0)
+
+
+var input = []
+var damage_fields_pixels = result.reduceRegions({
+  collection: damage_data,
+  reducer: ee.Reducer.mean().setOutputs(["damage_mean"]).combine({
+  reducer2: ee.Reducer.min().setOutputs(["damage_min"]),
+  sharedInputs: true
+}).combine({
+  reducer2: ee.Reducer.max().setOutputs(["damage_max"]),
+  sharedInputs: true
+}).combine({
+  reducer2: ee.Reducer.count().setOutputs(["damage_count"]),
+  sharedInputs: true
+}).combine({
+  reducer2: ee.Reducer.variance().setOutputs(["damage_variance"]),
+  sharedInputs: true
+}),
+  scale: 10})
+  
+  
+  
+damage_fields_pixels = damage_fields_pixels.filter('damage_count>0')
+
+
+function set_dam(feature) { 
+    return feature.set('damaged', 1 )
+}
+
+function set_no_dam(feature) { 
+    return feature.set('damaged',0)
+}
+
+function set_period(feature) { 
+    return feature.set('research_period',(period+1))
+}
+
+damage_fields_pixels = damage_fields_pixels.map(set_dam);
+damage_fields_pixels = damage_fields_pixels.map(set_period);
+
+
+//print(damage_fields_pixels,damage_fields_pixels.size())
+  if (damage_fields_pixels.size().getInfo()>0){
+    print('more than 0')
+
+dam_data.push(damage_fields_pixels)
+}
+}
+}
+
+var merged = dam_data[0]
+//print(ee.List(dam_data).size().getInfo()==2)
+for(var i =1; i<ee.List(dam_data).size().getInfo();i++){
+ merged = merged.merge(dam_data[i])
+}
+}
+//print(dam_data[0])
+print(merged)
+var muestras = merged.map(function (f) { 
+      return ee.Feature(f).set('geometry_type', ee.Feature(f).geometry().type()); })
+
+var geoCollection = muestras.filter(ee.Filter.equals('geometry_type', 'GeometryCollection'));
+var polygons = muestras.filter(ee.Filter.equals('geometry_type', 'Polygon'))
+
+Export.table.toDrive({
+    collection: polygons, 
+    description: 'damaged_fields_Mykolaivska_06_12', 
+    folder: 'damaged_fields',
+    fileFormat: 'shp',
+})
