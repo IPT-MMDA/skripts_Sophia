@@ -1,0 +1,349 @@
+///////////////////////////////
+https://code.earthengine.google.com/4a3e6c1d4eabbfbaff3a236033656b72
+/////////////////////////////////
+
+var geometry = 
+    /* color: #d63000 */
+    /* shown: false */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[35.84412741422122, 50.35852631857364],
+          [35.84412741422122, 50.119619276985915],
+          [36.34949850797122, 50.119619276985915],
+          [36.34949850797122, 50.35852631857364]]], null, false),
+    table2 = ee.FeatureCollection("users/sofidrozd13/villages_conturs"),
+    table3 = ee.FeatureCollection("users/sofidrozd13/train_data_kharkiv"),
+    table = ee.FeatureCollection("users/sofidrozd13/buffered"),
+    table4 = ee.FeatureCollection("users/sofidrozd13/regions_36");
+    exports.test = function(geometry,oblast,period,period2,period3, k){
+//var table = 
+//var big_test = table
+
+var class_mask = ee.Image("users/sofidrozd13/Classification_2022_July");
+
+var data = ee.FeatureCollection("users/hannayailymova16/utm-merged-results-w-attr-filtered_2022-06_shape")
+
+var villages_fid =table2.filter(ee.Filter.bounds(geometry)).aggregate_array('fid').sort()
+
+var research_area = table2.filter(ee.Filter.inList('fid',villages_fid.slice(k*10,(k+1)*10)))
+
+
+data = data.filter(ee.Filter.bounds(research_area))//.limit({max: 500, property: 'Area', ascending: false});
+
+Map.addLayer(research_area,null,"research_area_"+k,0)
+
+//oblast = table4.geometry()//geometry
+
+var train_data = table.filter(ee.Filter.bounds(oblast)).filter(ee.Filter.lte('Period', period2.toString())).filter(ee.Filter.gte('Period', (period2-2).toString())).distinct('.geo')
+var train_data1 = table.filter(ee.Filter.bounds(oblast)).filter(ee.Filter.lte('Period', (period2).toString())).filter(ee.Filter.gte('Period', (period2-4).toString())).distinct('.geo')
+
+
+print('train data: ', train_data.size())
+if (k==0){Map.addLayer(train_data,null,"train_data",0)}
+
+
+var time_pre_war = []
+var start_pre_war = []//time_pre_war[period]
+var end_pre_war = []//time_pre_war[period+1]
+
+  
+for (var year = 19; year<22; year++){
+    time_pre_war.push(['20'+year+'-02-24','20'+year+'-03-14','20'+year+'-03-28','20'+year+'-04-11','20'+year+'-04-25','20'+year+'-05-09','20'+year+'-05-23','20'+year+'-06-06','20'+year+'-06-20','20'+year+'-07-04','20'+year+'-07-18', '20'+year+'-08-01','20'+year+'-08-15','20'+year+'-08-29','20'+year+'-09-12','20'+year+'-09-26','20'+year+'-10-10','20'+year+'-10-24','20'+year+'-11-07','20'+year+'-11-21','20'+year+'-12-05'])
+    start_pre_war.push(time_pre_war[year-19][period])
+    end_pre_war.push(time_pre_war[year-19][period+1])
+}
+
+
+var time = ['2022-02-24','2022-03-14','2022-03-28','2022-04-11','2022-04-25','2022-05-09','2022-05-23','2022-06-06','2022-06-20','2022-07-04','2022-07-18', '2022-08-01','2022-08-15','2022-08-29','2022-09-12','2022-09-26','2022-10-10','2022-10-24','2022-11-07','2022-11-21','2022-12-05','2023-01-02',
+'2023-01-16','2023-01-30']
+
+var start = time[period2]
+var end = time[period2+1]
+
+var start_test = time[period3]
+var end_test = time[period3+1]
+
+
+function maskS2clouds2(image) {
+  var qa = image.select('SCL');
+  var mask = qa.eq(1).or(qa.eq(2)).or(qa.eq(4)).or(qa.eq(5)).or(qa.eq(6)).or(qa.eq(7))
+  return image.updateMask(mask).divide(10000);
+}
+
+
+var crop_mask = class_mask.expression( 
+    " (b('b1')>1 && b('b1')<10|| b('b1')==15 || b('b1')==19) ? 1" +
+      ": 0"
+    ).clip(oblast).rename('mask'); 
+   
+
+function maskS2clouds3(image) {
+  var qa = crop_mask.select('mask');
+  var mask = qa.eq(1)
+  return image.updateMask(mask);
+}
+
+var post_war = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+          .filterBounds(oblast)
+          .filterDate(start, end)
+        // .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE',10))
+          .map(maskS2clouds2)
+          .map(maskS2clouds3)
+          
+var post_war_test = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+          .filterBounds(oblast)
+          .filterDate(start_test, end_test)
+         // .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE',10))
+          .map(maskS2clouds2)
+          .map(maskS2clouds3)
+var pre_war = []
+
+for (var i = 0; i<3; i++){
+
+pre_war.push(ee.ImageCollection('COPERNICUS/S2_SR')
+          .filterBounds(oblast)
+          .filterDate(start_pre_war[i], end_pre_war[i])
+         // .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE',40))
+          .map(maskS2clouds2)
+          .map(maskS2clouds3))
+}
+
+ 
+
+var visualization = {
+  min: 0.0,
+  max: 0.2,
+  bands: ['B4', 'B3', 'B2'],
+};
+var visualization1 = {
+  min: 0.0,
+  max: 0.2,
+  bands: ['B4', 'B3', 'B2'],
+};
+
+
+
+var img = ['pre_war[0]','pre_war[1]','pre_war[2]','post_war', 'post_war_test']
+var all_data = ['train_data1','train_data1','train_data1','train_data','data']
+
+
+//features
+for (var j =0; j<5; j++){
+
+var pre = eval(img[j])
+var NDVI = (pre.map(function(image) {
+    return image.normalizedDifference(['B8', 'B4']);
+})).max().rename('NDVI');
+pre = pre.median()
+
+var EVI = pre.expression(
+                      '2.5*((B8-B4)/(B8+6*B4-7.5*B2+1))', {
+                        'B8' : pre.select('B8'),
+                        'B4' : pre.select('B4'),
+                        'B2' : pre.select('B2')
+                      }).rename('EVI');
+var AVI= pre.expression(
+                      '((B8 * (1-B4)*(B8-B4))**(1/3))', {
+                        'B8' : pre.select('B8'),
+                        'B4' : pre.select('B4')
+                        
+                      }).rename('AVI');
+
+var GCI= pre.expression(
+                      '((B9 / B3) -1)', {
+                        'B9' : pre.select('B9'),
+                        'B3' : pre.select('B3')
+                        
+                      }).rename('GCI');
+var B2 = pre.select('B2')
+var B3 = (pre.select('B3'))
+var B4 = (pre.select('B4'))
+var B5 = (pre.select('B5'))
+var B6 = (pre.select('B6'))
+var B7 = (pre.select('B7'))
+var B8= (pre.select('B8'))
+                      
+var ind = ['NDVI','GCI','B2','B3','EVI','AVI',"B8"]  
+
+var input = []
+var temp = eval(all_data[j]);
+for(var i = 0; i<7; i++){
+
+temp = eval(ind[i]).reduceRegions({
+  collection: temp,
+  reducer: ee.Reducer.mean().setOutputs([ind[i]+"_mean"]).combine({
+  reducer2: ee.Reducer.min().setOutputs([ind[i]+"_min"]),
+  sharedInputs: true
+}).combine({
+  reducer2: ee.Reducer.max().setOutputs([(ind[i])+"_max"]),
+  sharedInputs: true
+}).combine({
+  reducer2: ee.Reducer.stdDev().setOutputs([(ind[i])+"_stdDev"]),
+  sharedInputs: true
+}).combine({
+  reducer2: ee.Reducer.variance().setOutputs([(ind[i])+"_variance"]),
+  sharedInputs: true
+}),
+  scale: 10})
+  
+  input.push(ind[i]+"_mean")
+  //input.push(ind[i]+"_min")
+ // input.push(ind[i]+"_max")
+  //input.push(ind[i]+"_stdDev")
+  input.push(ind[i]+"_variance")
+}
+all_data[j] = temp
+}
+
+var train_data_pre_war =(all_data[0].filter('NDVI_mean>=-1').merge(all_data[1].filter('NDVI_mean>=-1')).merge(all_data[2].filter('NDVI_mean>=-1'))).filter('AVI_mean<10')
+//var train_ok_data_post_war = all_data[3].filter('NDVI_mean>=-1')
+var train_data_post_war = all_data[3].filter('NDVI_mean>=-1').filter('AVI_mean<10')
+var test_data = all_data[4].filter('NDVI_mean>=-1').filter('AVI_mean<10')
+
+function set_dam(feature) { 
+    return feature.set('damaged', 1 )
+}
+
+function set_no_dam(feature) { 
+    return feature.set('damaged',0)
+}
+
+train_data_pre_war = train_data_pre_war.map(set_no_dam);
+train_data_post_war = train_data_post_war.map(set_dam);
+
+
+var class_data = (train_data_pre_war.merge(train_data_post_war))//.filter('AVE_mean>=-10')//.merge(train_ok_data_post_war)
+
+print('train data: ', class_data.filter('AVI_mean>=-10'), 'train features: ', input)
+print('test data: ', test_data.filter('AVI_mean<10'))
+
+class_data = class_data.randomColumn();
+// split in a training (80%) and validation (20%)
+var training = class_data.filter(ee.Filter.gte('random',0.7));
+var validation = class_data.filter(ee.Filter.lte('random',0.3));
+
+
+//print(class_data.filter('damaged ==0').size(),'ok')
+//print(class_data.filter('damaged ==1').size(),'dam')
+
+
+var classifier = ee.Classifier.smileRandomForest(10,null,1,0.5,null,0).train({
+  features: training.filter('AVI_mean>=-10'),
+  classProperty: 'damaged',
+  inputProperties: input
+  //seed: 0
+});
+
+// Classify the sample.
+
+/*
+var predictions_train = training.classify(
+    {classifier: classifier, outputName: 'predicted'});
+   */   
+var predictions_val = validation.classify(
+    {classifier: classifier, outputName: 'predicted'}); 
+  
+var errorMatrix = predictions_val.errorMatrix({
+  actual: 'damaged',
+  predicted: 'predicted',
+}); 
+
+
+var classified = test_data.classify(
+    {classifier: classifier, outputName: 'predicted'});
+    
+    
+classified = classified.filter("NDVI_mean >=-1")
+  
+ 
+print('Error matrix', errorMatrix);
+
+// Compute accuracy metrics from the error matrix.
+print("Overall accuracy", errorMatrix.accuracy());
+print("Consumer's accuracy", errorMatrix.consumersAccuracy());
+print("Producer's accuracy", errorMatrix.producersAccuracy());
+print("Kappa", errorMatrix.kappa());
+
+//Map.addLayer(classified.filter('predicted ==0'),null,"pred_ok",0)
+//Map.addLayer(classified.filter('predicted ==1'),null,"pred_dam",0)
+print('classified',classified.size()) 
+return [classified, NDVI,GCI,post_war_test, B2,B3, pre_war,null]}
+
+
+exports.test_two = function(fields,image){
+  
+  
+var input = []
+var damage_fields_pixels = image.reduceRegions({
+  collection: fields,
+  reducer: ee.Reducer.mean().setOutputs(["damage_mea"]).combine({
+  reducer2: ee.Reducer.min().setOutputs(["damage_min"]),
+  sharedInputs: true
+}).combine({
+  reducer2: ee.Reducer.max().setOutputs(["damage_max"]),
+  sharedInputs: true
+}).combine({
+  reducer2: ee.Reducer.count().setOutputs(["damage_cou"]),
+  sharedInputs: true
+}).combine({
+  reducer2: ee.Reducer.variance().setOutputs(["damage_var"]),
+  sharedInputs: true
+}),
+  scale: 10}) 
+  
+  
+  input.push("damage_mea")
+  input.push("damage_min")
+  input.push("damage_max")
+  input.push("damage_cou")
+  input.push("damage_var")
+
+  /*
+var damage_manual = damage_fields_pixels.filter(ee.Filter.bounds(table))
+
+var no_damage = damage_manual.geometry().difference(table.geometry())
+
+no_damage = damage_manual.filter(ee.Filter.bounds(no_damage))
+
+function set_dam(feature) { 
+    return feature.set('damaged', 1 )
+}
+
+function set_no_dam(feature) { 
+    return feature.set('damaged',0)
+}
+
+damage_manual = damage_manual.map(set_no_dam);
+no_damage = no_damage.map(set_dam);
+*/
+
+function set_p(feature) { 
+    return feature.set('research_p',feature.get("Period"))
+}
+
+var train_data = ee.FeatureCollection(table3)//damage_manual.merge(no_damage)
+input.push('research_p')
+damage_fields_pixels = damage_fields_pixels.map(set_p);
+
+
+print(damage_fields_pixels, train_data)
+
+var classifier = ee.Classifier.smileRandomForest(10,null,1,0.5,null,0).train({
+  features: train_data,
+  classProperty: 'damaged',
+  inputProperties: input
+
+})
+
+var classified = damage_fields_pixels.classify(
+    {classifier: classifier, outputName: 'predicted'});
+    
+    
+return classified;
+}
+
+
