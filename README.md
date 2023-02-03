@@ -1,1 +1,1 @@
-# skripts_Sophia
+# sсripts_Sophia
